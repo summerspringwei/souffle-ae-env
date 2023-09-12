@@ -68,7 +68,7 @@ RUN cd /workspace/tvm/build && cmake .. \
     && make -j20
 
 # Install xgboost for auto_scheduler
-RUN /workpsace/anaconda3/pip install xgboost==1.5.0
+RUN /workpsace/anaconda3/bin/pip install xgboost==1.5.0
 
 # Set and modify environment variables here
 ENV PYTHONPATH=/workspace/tvm/python:${PYTHONPATH}
