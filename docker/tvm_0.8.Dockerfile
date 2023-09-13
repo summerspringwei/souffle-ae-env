@@ -43,9 +43,9 @@ ENV PATH=/opt/nvidia/nsight-compute/2022.4.1/:${PATH}
 
 # Install Anaconda
 RUN wget https://repo.anaconda.com/archive/Anaconda3-2022.05-Linux-x86_64.sh \
-    && bash Anaconda3-2022.05-Linux-x86_64.sh -b -p /workpsace/anaconda3 \
+    && bash Anaconda3-2022.05-Linux-x86_64.sh -b -p /workspace/anaconda3 \
     && rm Anaconda3-2022.05-Linux-x86_64.sh \
-    && echo "export PATH=/workpsace/anaconda3/bin:$PATH" >> ~/.bashrc
+    && echo "export PATH=/workspace/anaconda3/bin:$PATH" >> ~/.bashrc
 
 #  Build and install TVM
 RUN git clone --recursive https://github.com/apache/tvm /workspace/tvm \
@@ -68,8 +68,11 @@ RUN cd /workspace/tvm/build && cmake .. \
     && make -j20
 
 # Install xgboost for auto_scheduler
-RUN /workpsace/anaconda3/bin/pip install xgboost==1.5.0
-
+RUN /workspace/anaconda3/bin/pip install xgboost==1.5.0 
+RUN /workspace/anaconda3/bin/pip install numpy==1.21.0
+RUN /workspace/anaconda3/bin/pip install torch==2.0.1 torchvision torchaudio
 # Set and modify environment variables here
 ENV PYTHONPATH=/workspace/tvm/python:${PYTHONPATH}
 ENV LD_LIBRARY_PATH=/workspace/tvm/build:${LD_LIBRARY_PATH}
+ENV PATH=/workspace/anaconda3/bin:$PATH
+ENV TORCH_HOME="/workspace/anaconda3/lib/python3.9/site-packages/torch"
