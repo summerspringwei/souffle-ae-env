@@ -72,8 +72,15 @@ RUN /workspace/anaconda3/bin/pip install xgboost==1.5.0
 RUN /workspace/anaconda3/bin/pip install numpy==1.21.0
 RUN /workspace/anaconda3/bin/pip install torch==2.0.1 torchvision torchaudio
 
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        libcudnn8-dev_8.5.0.96-1+cuda11.7
+
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/libcudnn8-dev_8.5.0.96-1+cuda11.7_amd64.deb && \
+    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/libcudnn8_8.5.0.96-1+cuda11.7_amd64.deb && \
+    dpkg -i libcudnn8_8.5.0.96-1+cuda11.7_amd64.deb && \
+    dpkg -i libcudnn8-dev_8.5.0.96-1+cuda11.7_amd64.deb
+
+RUN apt list --installed | grep cudnn
+
+# RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libcudnn8
 
 # Set and modify environment variables here
 ENV PYTHONPATH=/workspace/tvm/python:${PYTHONPATH}
