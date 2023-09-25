@@ -80,10 +80,15 @@ RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86
 
 RUN apt list --installed | grep cudnn
 
+RUN apt update -y && DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends gdb
+
+RUN mkdir /workspace/third_party && cd /workspace/third_party && git clone https://github.com/lukemelas/EfficientNet-PyTorch.git
 # RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libcudnn8
 
 # Set and modify environment variables here
-ENV PYTHONPATH=/workspace/tvm/python:${PYTHONPATH}
+ENV PYTHONPATH=/workspace/tvm/python:/workspace/third_party/EfficientNet-PyTorch:${PYTHONPATH}
+ENV PYTHONPATH=/workspace/tensor-compiler/src/operator_fusion:${PYTHONPATH}
 ENV LD_LIBRARY_PATH=/workspace/tvm/build:${LD_LIBRARY_PATH}
 ENV PATH=/workspace/anaconda3/bin:$PATH
 ENV TORCH_HOME="/workspace/anaconda3/lib/python3.9/site-packages/torch"
+ENV LD_LIBRARY_PATH=${TORCH_HOME}/lib:$LD_LIBRARY_PATH
