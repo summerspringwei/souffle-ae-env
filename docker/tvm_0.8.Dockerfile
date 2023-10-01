@@ -89,6 +89,7 @@ RUN cd /workspace && git clone https://github.com/abseil/abseil-cpp.git && mkdir
 
 # RUN cd to_python_binding_path && python setup.py clean && python setup.py install && pip install .
 
+RUN /workspace/anaconda3/bin/pip install tensorflow==2.10.0 yacs tensorflow-addons
 
 # Set and modify environment variables here
 ENV PYTHONPATH=/workspace/tvm/python:/workspace/third_party/EfficientNet-PyTorch:${PYTHONPATH}
