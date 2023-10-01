@@ -85,10 +85,16 @@ RUN apt update -y && DEBIAN_FRONTEND=noninteractive apt install -y --no-install-
 RUN mkdir /workspace/third_party && cd /workspace/third_party && git clone https://github.com/lukemelas/EfficientNet-PyTorch.git
 # RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libcudnn8
 
+RUN cd /workspace && git clone https://github.com/abseil/abseil-cpp.git && mkdir abseil-cpp/build && cd abseil-cpp/build && cmake .. && make -j20 && make install
+
+# RUN cd to_python_binding_path && python setup.py clean && python setup.py install && pip install .
+
+
 # Set and modify environment variables here
 ENV PYTHONPATH=/workspace/tvm/python:/workspace/third_party/EfficientNet-PyTorch:${PYTHONPATH}
 ENV PYTHONPATH=/workspace/tensor-compiler/src/operator_fusion:${PYTHONPATH}
 ENV LD_LIBRARY_PATH=/workspace/tvm/build:${LD_LIBRARY_PATH}
 ENV PATH=/workspace/anaconda3/bin:$PATH
 ENV TORCH_HOME="/workspace/anaconda3/lib/python3.9/site-packages/torch"
-ENV LD_LIBRARY_PATH=${TORCH_HOME}/lib:$LD_LIBRARY_PATH
+ENV CUDA_HOME=/usr/local/cuda
+ENV LD_LIBRARY_PATH=${TORCH_HOME}/lib:${CUDA_HOME}/lib64:${CUDA_HOME}//targets/x86_64-linux/lib/stubs:${CUDA_HOME}//targets/x86_64-linux/lib:$LD_LIBRARY_PATH
