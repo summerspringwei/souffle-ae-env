@@ -1,0 +1,725 @@
+diff --git a/.gitignore b/.gitignore
+index 9a0fc86472..710b6a95c0 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -107,3 +107,5 @@ mindspore/lite/test/do_test/
+ 
+ # lite opencl compile file
+ *.cl.inc
++*.ncu-rep
++
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 0b61c1987f..8270cd31c3 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -38,7 +38,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -g2 -ggdb -fno-inline-functions -f
+     -DHALF_ENABLE_CPP11_USER_LITERALS=0 -D_FORTIFY_SOURCE=2 -Wno-cpp")
+ 
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I/usr/local/include -std=c++17 \
+-    -Werror -Wall -Wno-deprecated-declarations -fPIC")
++    -Wno-error -Wall -Wno-deprecated-declarations -fPIC")
+ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+ 
+ set(PYBIND11_CPP_STANDARD -std=c++17)
+diff --git a/build.sh b/build.sh
+index 1608c11554..46653285ea 100755
+--- a/build.sh
++++ b/build.sh
+@@ -14,7 +14,7 @@
+ # limitations under the License.
+ # ============================================================================
+ 
+-set -e
++set -xe
+ BASEPATH=$(cd "$(dirname $0)"; pwd)
+ CUDA_PATH=""
+ export BUILD_PATH="${BASEPATH}/build/"
+@@ -81,7 +81,7 @@ check_on_off()
+ checkopts()
+ {
+   # Init default values of build options
+-  THREAD_NUM=8
++  THREAD_NUM=80
+   DEBUG_MODE="off"
+   VERBOSE=""
+   ENABLE_SECURITY="off"
+diff --git a/mindspore/_extends/parallel_compile/akg_compiler/get_file_path.py b/mindspore/_extends/parallel_compile/akg_compiler/get_file_path.py
+index 98d5fdc39e..a533ae8b82 100644
+--- a/mindspore/_extends/parallel_compile/akg_compiler/get_file_path.py
++++ b/mindspore/_extends/parallel_compile/akg_compiler/get_file_path.py
+@@ -28,6 +28,7 @@ def get_akg_path():
+     if find_pos == -1:
+         raise RuntimeError("Find module mindspore origin file failed!")
+     akg_path = "{}_akg".format(res_path[:find_pos])
++    print(akg_path)
+     if not os.path.isdir(akg_path):
+         raise RuntimeError("Cannot find akg from mindspore module!")
+     return akg_path
+diff --git a/mindspore/ccsrc/backend/kernel_compiler/akg/gpu/akg_gpu_kernel_mod.cc b/mindspore/ccsrc/backend/kernel_compiler/akg/gpu/akg_gpu_kernel_mod.cc
+index 47f9a5180f..604d1bcbf9 100644
+--- a/mindspore/ccsrc/backend/kernel_compiler/akg/gpu/akg_gpu_kernel_mod.cc
++++ b/mindspore/ccsrc/backend/kernel_compiler/akg/gpu/akg_gpu_kernel_mod.cc
+@@ -120,9 +120,11 @@ bool GpuKernelMod::Launch(const std::vector<AddressPtr> &inputs, const std::vect
+                        [](const AddressPtr &input) -> void * { return reinterpret_cast<void *>(&(input->addr)); });
+   (void)std::transform(std::begin(outputs), std::end(outputs), std::back_inserter(runtimeargs),
+                        [](const AddressPtr &output) -> void * { return reinterpret_cast<void *>(&(output->addr)); });
++  printf("xiachunwei launchkernel\n");
+   result = cuLaunchKernel(kernel_addr, thread_info[0], thread_info[1], thread_info[2], thread_info[3], thread_info[4],
+                           thread_info[5], 0, reinterpret_cast<CUstream>(stream_ptr),
+                           reinterpret_cast<void **>(&runtimeargs[0]), 0);
++  printf("xiachunwei launchkernel end\n");
+   if (result != CUDA_SUCCESS) {
+     const char *msg = nullptr;
+     cuGetErrorName(result, &msg);
+diff --git a/mindspore/ccsrc/profiler/device/gpu/gpu_profiling.cc b/mindspore/ccsrc/profiler/device/gpu/gpu_profiling.cc
+index 3553e18bf0..afc0096d75 100644
+--- a/mindspore/ccsrc/profiler/device/gpu/gpu_profiling.cc
++++ b/mindspore/ccsrc/profiler/device/gpu/gpu_profiling.cc
+@@ -459,11 +459,12 @@ void GPUProfiler::OpDataProducerEnd() {
+     CHECK_CUDA_RET_WITH_ERROR(cudaEventDestroy(op_event_stop_), "cudaEventDestroy  op event stop failed");
+     op_time_elapsed = op_time_elapsed * kTimeUnit;
+     op_host_time_stop_ = GetHostTimeStamp();
++    MS_LOG(DEBUG) << "Host Time Elapsed(us)," << op_name_ << "," << op_time_elapsed;
+   } else {
+     op_host_time_stop_ = GetHostTimeStamp();
+     op_time_elapsed = (op_host_time_stop_ - op_host_time_start_) / kTimeUnit;
+   }
+-  MS_LOG(DEBUG) << "Host Time Elapsed(us)," << op_name_ << "," << op_time_elapsed;
++  MS_LOG(DEBUG) << "Host Time Elapsed(us)," << op_name_ << "," << "xiachunwei-latency: " <<op_time_elapsed;
+   Profiler::SetRunTimeData(op_name_, op_time_elapsed);
+   Profiler::SetRunTimeData(op_name_, op_cupti_time_start_, op_time_elapsed);
+ }
+diff --git a/mindspore/ccsrc/profiler/device/gpu/gpu_profiling.h b/mindspore/ccsrc/profiler/device/gpu/gpu_profiling.h
+index 17fdd71b93..7579c2770c 100644
+--- a/mindspore/ccsrc/profiler/device/gpu/gpu_profiling.h
++++ b/mindspore/ccsrc/profiler/device/gpu/gpu_profiling.h
+@@ -122,6 +122,7 @@ class GPUProfiler : public Profiler {
+   void StepProfilingEnable(const bool enable_flag) override;
+   void SyncEnable(const bool enable_flag);
+   bool GetEnableFlag() const { return enable_flag_; }
++  // bool GetEnableFlag() const { return true; }
+   bool GetSyncEnableFlag() const { return sync_enable_flag_; }
+   void EventHandleProcess(CUpti_CallbackId cbid, const CUpti_CallbackData *cbdata, const std::string &typestring,
+                           uint64_t startTimestamp, uint64_t endTimestamp);
+diff --git a/mindspore/ccsrc/runtime/hardware/gpu/gpu_device_context.cc b/mindspore/ccsrc/runtime/hardware/gpu/gpu_device_context.cc
+index 4264cdf6d8..9db7a71202 100644
+--- a/mindspore/ccsrc/runtime/hardware/gpu/gpu_device_context.cc
++++ b/mindspore/ccsrc/runtime/hardware/gpu/gpu_device_context.cc
+@@ -389,10 +389,11 @@ bool GPUDeviceContext::LaunchKernel(const CNodePtr &kernel, const std::vector<Ad
+   if (!BindDeviceToCurrentThread()) {
+     return false;
+   }
+-
++  MS_LOG(INFO) << "xiachunwei launch kernel\n";
+   auto kernel_mod = AnfAlgo::GetKernelMod(kernel);
+   MS_EXCEPTION_IF_NULL(kernel_mod);
+   const auto &profiler_inst = profiler::gpu::GPUProfiler::GetInstance();
++  // profiler_inst->StepProfilingEnable(true);
+   MS_EXCEPTION_IF_NULL(profiler_inst);
+   bool ret = true;
+   if (!profiler_inst->GetEnableFlag()) {
+diff --git a/mindspore/ccsrc/utils/context/graph_kernel_flags.cc b/mindspore/ccsrc/utils/context/graph_kernel_flags.cc
+index b6025ed84a..867a43242e 100644
+--- a/mindspore/ccsrc/utils/context/graph_kernel_flags.cc
++++ b/mindspore/ccsrc/utils/context/graph_kernel_flags.cc
+@@ -87,6 +87,14 @@ class FlagRegister {
+ 
+   template <typename T>
+   void AddFlag(std::string flag_name, T *flag_var, T default_value = T()) {
++    std::map<std::string, std::string>::iterator it;
++    for (it = flag_map_.begin(); it != flag_map_.end(); it++)
++    {
++        std::cout << it->first    // string (key)
++                  << ':'
++                  << it->second   // string's value 
++                  << std::endl;
++    }
+     auto iter = flag_map_.find(flag_name);
+     if (iter != flag_map_.end()) {
+       T var;
+diff --git a/model_zoo/official/cv/yolov3_darknet53/eval.py b/model_zoo/official/cv/yolov3_darknet53/eval.py
+index 941da2f0e0..bf1c3a33b1 100644
+--- a/model_zoo/official/cv/yolov3_darknet53/eval.py
++++ b/model_zoo/official/cv/yolov3_darknet53/eval.py
+@@ -269,6 +269,9 @@ def run_test():
+ 
+     devid = int(os.getenv('DEVICE_ID')) if os.getenv('DEVICE_ID') else 0
+     context.set_context(mode=context.GRAPH_MODE, device_target=config.device_target, save_graphs=False, device_id=devid)
++    enable_gk = os.getenv("ENABLE_GRAPH_KERNEL") == "ON"
++    print("batchsize = {}, enable_graph_kernel = {}".format(config.per_batch_size, enable_gk))
++    context.set_context(enable_graph_kernel=enable_gk)
+ 
+     # logger
+     config.outputs_dir = os.path.join(config.log_path,
+diff --git a/model_zoo/official/cv/yolov3_darknet53/model_utils/config.py b/model_zoo/official/cv/yolov3_darknet53/model_utils/config.py
+index 2c191e9f74..ce45aa47bc 100644
+--- a/model_zoo/official/cv/yolov3_darknet53/model_utils/config.py
++++ b/model_zoo/official/cv/yolov3_darknet53/model_utils/config.py
+@@ -122,6 +122,7 @@ def get_config():
+     pprint(default)
+     args = parse_cli_to_yaml(parser=parser, cfg=default, helper=helper, choices=choices, cfg_path=path_args.config_path)
+     final_config = merge(args, default)
++    final_config['per_batch_size'] = int(os.getenv("BATCH_SIZE"))
+     return Config(final_config)
+ 
+ config = get_config()
+diff --git a/model_zoo/official/cv/yolov3_darknet53/scripts/run_eval_gpu.sh b/model_zoo/official/cv/yolov3_darknet53/scripts/run_eval_gpu.sh
+index e6620449fe..3974944c01 100644
+--- a/model_zoo/official/cv/yolov3_darknet53/scripts/run_eval_gpu.sh
++++ b/model_zoo/official/cv/yolov3_darknet53/scripts/run_eval_gpu.sh
+@@ -14,10 +14,9 @@
+ # limitations under the License.
+ # ============================================================================
+ 
+-if [ $# != 2 ]
+-then
+-    echo "Usage: sh run_eval_gpu.sh [DATASET_PATH] [CHECKPOINT_PATH]"
+-exit 1
++export BATCH_SIZE=$3
++if [ -n "$4" ]; then
++  export ENABLE_GRAPH_KERNEL=ON
+ fi
+ 
+ get_real_path(){
+@@ -61,9 +60,9 @@ cp -r ../model_utils ./eval
+ cd ./eval || exit
+ env > env.log
+ echo "start inferring for device $DEVICE_ID"
+-python eval.py \
++python3 eval.py \
+     --device_target="GPU" \
+     --data_dir=$DATASET_PATH \
+     --pretrained=$CHECKPOINT_PATH \
+-    --testing_shape=416 > log.txt 2>&1 &
++    --testing_shape=416
+ cd ..
+diff --git a/model_zoo/official/cv/yolov3_darknet53/scripts/run_standalone_train_gpu.sh b/model_zoo/official/cv/yolov3_darknet53/scripts/run_standalone_train_gpu.sh
+index 3aaa74705b..a56e114c93 100644
+--- a/model_zoo/official/cv/yolov3_darknet53/scripts/run_standalone_train_gpu.sh
++++ b/model_zoo/official/cv/yolov3_darknet53/scripts/run_standalone_train_gpu.sh
+@@ -14,11 +14,6 @@
+ # limitations under the License.
+ # ============================================================================
+ 
+-if [ $# != 2 ]
+-then
+-    echo "Usage: sh run_standalone_train_gpu.sh [DATASET_PATH] [PRETRAINED_BACKBONE]"
+-exit 1
+-fi
+ 
+ get_real_path(){
+   if [ "${1:0:1}" == "/" ]; then
+@@ -33,6 +28,11 @@ echo $DATASET_PATH
+ PRETRAINED_BACKBONE=$(get_real_path $2)
+ echo $PRETRAINED_BACKBONE
+ 
++export BATCH_SIZE=$3
++if [ -n "$4" ]; then
++  export ENABLE_GRAPH_KERNEL=ON
++fi
++
+ if [ ! -d $DATASET_PATH ]
+ then
+     echo "error: DATASET_PATH=$DATASET_PATH is not a directory"
+@@ -63,15 +63,14 @@ cd ./train || exit
+ echo "start training for device $DEVICE_ID"
+ env > env.log
+ 
+-python train.py \
++python3 train.py \
+     --device_target="GPU" \
+     --data_dir=$DATASET_PATH \
+     --pretrained_backbone=$PRETRAINED_BACKBONE \
+     --is_distributed=0 \
+     --lr=0.1 \
+     --T_max=320 \
+-    --max_epoch=320 \
++    --max_epoch=1 \
+     --warmup_epochs=4 \
+     --training_shape=416 \
+-    --lr_scheduler=cosine_annealing > log.txt 2>&1 &
+-cd ..
+\ No newline at end of file
++    --lr_scheduler=cosine_annealing
+diff --git a/model_zoo/official/cv/yolov3_darknet53/train.py b/model_zoo/official/cv/yolov3_darknet53/train.py
+index 6b11a9e4f4..c88ad38218 100644
+--- a/model_zoo/official/cv/yolov3_darknet53/train.py
++++ b/model_zoo/official/cv/yolov3_darknet53/train.py
+@@ -59,9 +59,11 @@ def conver_training_shape(args):
+     training_shape = [int(args.training_shape), int(args.training_shape)]
+     return training_shape
+ 
+-def set_graph_kernel_context():
++def set_graph_kernel_context(config):
+     if context.get_context("device_target") == "GPU":
+-        context.set_context(enable_graph_kernel=True)
++        enable_gk = os.getenv("ENABLE_GRAPH_KERNEL") == "ON"
++        print("batchsize = {}, enable_graph_kernel = {}".format(config.per_batch_size, enable_gk))
++        context.set_context(enable_graph_kernel=enable_gk)
+         context.set_context(graph_kernel_flags="--enable_parallel_fusion "
+                                                "--disable_expand_ops=BatchNorm,BatchNormGrad "
+                                                "--disable_cluster_ops=ReduceMax,Reshape "
+@@ -71,7 +73,7 @@ def network_init(args):
+     devid = int(os.getenv('DEVICE_ID', '0'))
+     context.set_context(mode=context.GRAPH_MODE, enable_auto_mixed_precision=True,
+                         device_target=args.device_target, save_graphs=False, device_id=devid)
+-    set_graph_kernel_context()
++    set_graph_kernel_context(config)
+ 
+     profiler = None
+     if args.need_profiler:
+diff --git a/model_zoo/official/nlp/bert/pretrain_config.yaml b/model_zoo/official/nlp/bert/pretrain_config.yaml
+index 8bd072292c..9ee4ab452d 100644
+--- a/model_zoo/official/nlp/bert/pretrain_config.yaml
++++ b/model_zoo/official/nlp/bert/pretrain_config.yaml
+@@ -122,7 +122,7 @@ nezha_net_cfg:
+ # large
+ large_batch_size: 24
+ large_net_cfg:
+-    seq_length: 512
++    seq_length: 128 
+     vocab_size: 30522
+     hidden_size: 1024
+     num_hidden_layers: 24
+diff --git a/model_zoo/official/nlp/bert/run_pretrain.py b/model_zoo/official/nlp/bert/run_pretrain.py
+index ba14ed0cd7..260c6110b7 100644
+--- a/model_zoo/official/nlp/bert/run_pretrain.py
++++ b/model_zoo/official/nlp/bert/run_pretrain.py
+@@ -128,16 +128,22 @@ def _auto_enable_graph_kernel(device_target, graph_kernel_mode):
+ 
+ def _set_graph_kernel_context(device_target):
+     """Add suitable graph kernel context for different configs."""
++    gk_flags  = os.getenv("ENABLE_GRAPH_KERNEL")
++    enable_gk = bool(gk_flags)
++    print("nettype= {}, batchsize = {}, enable_graph_kernel = {}".format(cfg.bert_network, cfg.batch_size, gk_flags))
+     if device_target == 'GPU':
+         if cfg.bert_network == 'base':
+-            context.set_context(enable_graph_kernel=True,
+-                                graph_kernel_flags="--enable_stitch_fusion=true "
+-                                                   "--enable_parallel_fusion=true "
+-                                                   "--enable_cluster_ops=BatchMatMul")
++            context.set_context(enable_graph_kernel=enable_gk)
++            if gk_flags == "L1":
++                context.set_context(graph_kernel_flags="--enable_cluster_ops=BatchMatMul")
++            elif gk_flags == "L2":
++                context.set_context(graph_kernel_flags="--enable_stitch_fusion=true --enable_cluster_ops=BatchMatMul")
++            else:
++                context.set_context(graph_kernel_flags="--enable_stitch_fusion=true --enable_parallel_fusion=true --enable_cluster_ops=BatchMatMul")
+         else:
+-            context.set_context(enable_graph_kernel=True)
++            context.set_context(enable_graph_kernel=enable_gk)
+     else:
+-        logger.warning('Graph kernel only supports GPU back-end now, run with graph kernel off.')
++        context.set_context(enable_graph_kernel=enable_gk)
+ 
+ 
+ def _check_compute_type(args_opt):
+@@ -250,7 +256,7 @@ def run_pretrain():
+ 
+     model = Model(net_with_grads)
+     model = ConvertModelUtils().convert_to_thor_model(model, network=net_with_grads, optimizer=optimizer)
+-    model.train(new_repeat_count, ds, callbacks=callback,
++    model.train(30, ds, callbacks=callback,
+                 dataset_sink_mode=(cfg.enable_data_sink == "true"), sink_size=cfg.data_sink_steps)
+ 
+ 
+diff --git a/model_zoo/official/nlp/bert/scripts/run_distributed_pretrain_for_gpu.sh b/model_zoo/official/nlp/bert/scripts/run_distributed_pretrain_for_gpu.sh
+index 8d0fccd26c..4329f30b51 100644
+--- a/model_zoo/official/nlp/bert/scripts/run_distributed_pretrain_for_gpu.sh
++++ b/model_zoo/official/nlp/bert/scripts/run_distributed_pretrain_for_gpu.sh
+@@ -24,10 +24,17 @@ echo "==========================================================================
+ RANK_SIZE=$1
+ EPOCH_SIZE=$2
+ DATA_DIR=$3
+-SCHEMA_DIR=$4
++SCHEMA_DIR=
++
++export BERT_NETWORK=$4
++export BATCH_SIZE=$5
++if [ -n "$6" ]; then
++  export ENABLE_GRAPH_KERNEL=$6
++fi
++
+ 
+ mpirun --allow-run-as-root -n $RANK_SIZE --output-filename log_output --merge-stderr-to-stdout \
+-  python run_pretrain.py        \
++  python3 run_pretrain.py        \
+     --device_target="GPU"      \
+     --distribute="true"        \
+     --epoch_size=$EPOCH_SIZE    \
+@@ -40,5 +47,5 @@ mpirun --allow-run-as-root -n $RANK_SIZE --output-filename log_output --merge-st
+     --save_checkpoint_steps=10000  \
+     --save_checkpoint_num=1      \
+     --data_dir=$DATA_DIR      \
+-    --schema_dir=$SCHEMA_DIR > log.txt 2>&1 &
++    --schema_dir=$SCHEMA_DIR
+ 
+diff --git a/model_zoo/official/nlp/bert/scripts/run_standalone_pretrain_ascend.sh b/model_zoo/official/nlp/bert/scripts/run_standalone_pretrain_ascend.sh
+index 329958a08b..762d64ad7f 100644
+--- a/model_zoo/official/nlp/bert/scripts/run_standalone_pretrain_ascend.sh
++++ b/model_zoo/official/nlp/bert/scripts/run_standalone_pretrain_ascend.sh
+@@ -23,7 +23,14 @@ echo "==========================================================================
+ DEVICE_ID=$1
+ EPOCH_SIZE=$2
+ DATA_DIR=$3
+-SCHEMA_DIR=$4
++SCHEMA_DIR=
++
++export BERT_NETWORK=$4
++export BATCH_SIZE=$5
++if [ -n "$6" ]; then
++  export ENABLE_GRAPH_KERNEL=$6
++fi
++
+ ulimit -s 102400
+ 
+ mkdir -p ms_log 
+@@ -45,4 +52,4 @@ python ${PROJECT_DIR}/../run_pretrain.py  \
+     --save_checkpoint_steps=10000 \
+     --save_checkpoint_num=1 \
+     --data_dir=$DATA_DIR \
+-    --schema_dir=$SCHEMA_DIR > pretraining_log.txt 2>&1 &
++    --schema_dir=$SCHEMA_DIR
+diff --git a/model_zoo/official/nlp/bert/scripts/run_standalone_pretrain_for_gpu.sh b/model_zoo/official/nlp/bert/scripts/run_standalone_pretrain_for_gpu.sh
+index 74f8e78462..850aa9735e 100644
+--- a/model_zoo/official/nlp/bert/scripts/run_standalone_pretrain_for_gpu.sh
++++ b/model_zoo/official/nlp/bert/scripts/run_standalone_pretrain_for_gpu.sh
+@@ -17,21 +17,26 @@
+ echo "=============================================================================================================="
+ echo "Please run the script as: "
+ echo "bash run_standalone_pretrain.sh DEVICE_ID EPOCH_SIZE DATA_DIR SCHEMA_DIR"
+-echo "for example: bash run_standalone_pretrain.sh 0 40 /path/zh-wiki/ /path/Schema.json"
++echo "for example: bash run_standalone_pretrain.sh 0 40 /path/zh-wiki/ batch_size enable_graph_kernel"
+ echo "=============================================================================================================="
+ 
+ DEVICE_ID=$1
+ EPOCH_SIZE=$2
+ DATA_DIR=$3
+-SCHEMA_DIR=$4
++SCHEMA_DIR=
+ 
++export BERT_NETWORK=$4
++export BATCH_SIZE=$5
++if [ -n "$6" ]; then
++  export ENABLE_GRAPH_KERNEL=$6
++fi 
+ export CUDA_VISIBLE_DEVICES=$DEVICE_ID
+ 
+ mkdir -p ms_log
+ CUR_DIR=`pwd`
+ export GLOG_log_dir=${CUR_DIR}/ms_log
+ export GLOG_logtostderr=0
+-python run_pretrain.py  \
++python3 run_pretrain.py  \
+     --device_target="GPU" \
+     --distribute="false" \
+     --epoch_size=$EPOCH_SIZE \
+@@ -45,4 +50,4 @@ python run_pretrain.py  \
+     --save_checkpoint_steps=10000 \
+     --save_checkpoint_num=1 \
+     --data_dir=$DATA_DIR \
+-    --schema_dir=$SCHEMA_DIR > log.txt 2>&1 &
++    --schema_dir=$SCHEMA_DIR
+diff --git a/model_zoo/official/nlp/bert/src/model_utils/config.py b/model_zoo/official/nlp/bert/src/model_utils/config.py
+index d36689c29c..0978aa053e 100644
+--- a/model_zoo/official/nlp/bert/src/model_utils/config.py
++++ b/model_zoo/official/nlp/bert/src/model_utils/config.py
+@@ -201,7 +201,11 @@ def get_config():
+     args = parse_cli_to_yaml(parser=parser, cfg=default, helper=helper, choices=choices, cfg_path=path_args.config_path)
+     final_config = merge(args, default)
+     config_obj = Config(final_config)
++    config_obj.bert_network = os.getenv("BERT_NETWORK")
++    if config_obj.bert_network == "large":
++        config_obj.optimizer = "AdamWeightDecay"
+     extra_operations(config_obj)
++    config_obj.batch_size = int(os.getenv("BATCH_SIZE"))
+     return config_obj
+ 
+ 
+diff --git a/model_zoo/official/nlp/transformer/scripts/run_standalone_train.sh b/model_zoo/official/nlp/transformer/scripts/run_standalone_train.sh
+index 50a7779ee8..e6b498189d 100644
+--- a/model_zoo/official/nlp/transformer/scripts/run_standalone_train.sh
++++ b/model_zoo/official/nlp/transformer/scripts/run_standalone_train.sh
+@@ -13,7 +13,8 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ # ============================================================================
+-if [ $# != 5 ] ; then
++
++if [ $# < 6 ] ; then
+ echo "=============================================================================================================="
+ echo "Please run the script as: "
+ echo "sh run_standalone_train.sh DEVICE_TARGET DEVICE_ID EPOCH_SIZE GRADIENT_ACCUMULATE_STEP DATA_PATH"
+@@ -34,8 +35,13 @@ EPOCH_SIZE=$3
+ GRADIENT_ACCUMULATE_STEP=$4
+ DATA_PATH=$5
+ 
++export BATCH_SIZE=$6
++if [ -n "$7" ]; then
++  export ENABLE_GRAPH_KERNEL=ON
++fi
++
+ if [ $DEVICE_TARGET == 'Ascend' ];then
+-    python train.py  \
++    python3 train.py  \
+         --config_path="./default_config_large.yaml" \
+         --distribute="false" \
+         --epoch_size=$EPOCH_SIZE \
+@@ -52,7 +58,7 @@ if [ $DEVICE_TARGET == 'Ascend' ];then
+ elif [ $DEVICE_TARGET == 'GPU' ];then
+     export CUDA_VISIBLE_DEVICES="$2"
+ 
+-    python train.py  \
++    python3 train.py  \
+         --config_path="./default_config_large_gpu.yaml" \
+         --distribute="false" \
+         --epoch_size=$EPOCH_SIZE \
+@@ -63,7 +69,7 @@ elif [ $DEVICE_TARGET == 'GPU' ];then
+         --checkpoint_path="" \
+         --save_checkpoint_steps=2500 \
+         --save_checkpoint_num=30 \
+-        --data_path=$DATA_PATH > log.txt 2>&1 &
++        --data_path=$DATA_PATH
+ else
+     echo "Not supported device target."
+ fi
+diff --git a/model_zoo/official/nlp/transformer/src/dataset.py b/model_zoo/official/nlp/transformer/src/dataset.py
+index e55da66029..79a642107e 100644
+--- a/model_zoo/official/nlp/transformer/src/dataset.py
++++ b/model_zoo/official/nlp/transformer/src/dataset.py
+@@ -29,7 +29,7 @@ def create_transformer_dataset(epoch_count=1, rank_size=1, rank_id=0, do_shuffle
+                             columns_list=["source_eos_ids", "source_eos_mask",
+                                           "target_sos_ids", "target_sos_mask",
+                                           "target_eos_ids", "target_eos_mask"],
+-                            shuffle=(do_shuffle == "true"), num_shards=rank_size, shard_id=rank_id)
++                            shuffle=(do_shuffle == "true"), num_shards=rank_size, shard_id=rank_id, num_samples=32)
+         type_cast_op = deC.TypeCast(mstype.int32)
+         ds = ds.map(operations=type_cast_op, input_columns="source_eos_ids")
+         ds = ds.map(operations=type_cast_op, input_columns="source_eos_mask")
+diff --git a/model_zoo/official/nlp/transformer/src/model_utils/config.py b/model_zoo/official/nlp/transformer/src/model_utils/config.py
+index 7f1ff6e2b8..79e7c400fe 100644
+--- a/model_zoo/official/nlp/transformer/src/model_utils/config.py
++++ b/model_zoo/official/nlp/transformer/src/model_utils/config.py
+@@ -122,6 +122,7 @@ def get_config():
+     pprint(default)
+     args = parse_cli_to_yaml(parser=parser, cfg=default, helper=helper, choices=choices, cfg_path=path_args.config_path)
+     final_config = merge(args, default)
++    final_config['batch_size'] = int(os.getenv("BATCH_SIZE"))
+     return Config(final_config)
+ 
+ config = get_config()
+diff --git a/model_zoo/official/nlp/transformer/train.py b/model_zoo/official/nlp/transformer/train.py
+index a70a17ff78..2005f57828 100644
+--- a/model_zoo/official/nlp/transformer/train.py
++++ b/model_zoo/official/nlp/transformer/train.py
+@@ -123,7 +123,9 @@ def run_transformer_train():
+ 
+     if config.device_target == "GPU":
+         # Enable graph kernel
+-        context.set_context(enable_graph_kernel=True, graph_kernel_flags="--enable_parallel_fusion")
++        enable_gk = os.getenv("ENABLE_GRAPH_KERNEL") == "ON"
++        print("batchsize = {}, enable_graph_kernel = {}".format(config.batch_size, enable_gk))
++        context.set_context(enable_graph_kernel=enable_gk, graph_kernel_flags="--enable_parallel_fusion")
+     if config.distribute == "true":
+         if config.device_target == "Ascend":
+             device_num = config.device_num
+@@ -176,7 +178,7 @@ def run_transformer_train():
+                 ckpt_config = CheckpointConfig(save_checkpoint_steps=config.save_checkpoint_steps,
+                                                keep_checkpoint_max=config.save_checkpoint_num)
+             else:
+-                ckpt_config = CheckpointConfig(save_checkpoint_steps=dataset.get_dataset_size(),
++                ckpt_config = CheckpointConfig(save_checkpoint_steps=dataset.save_checkpoint_steps,
+                                                keep_checkpoint_max=config.save_checkpoint_num)
+             ckpoint_cb = ModelCheckpoint(prefix='transformer', directory=save_ckpt_path, config=ckpt_config)
+             callbacks.append(ckpoint_cb)
+diff --git a/model_zoo/official/recommend/deepfm/scripts/run_distribute_train_gpu.sh b/model_zoo/official/recommend/deepfm/scripts/run_distribute_train_gpu.sh
+index 2fe4c575de..43fd741ed1 100644
+--- a/model_zoo/official/recommend/deepfm/scripts/run_distribute_train_gpu.sh
++++ b/model_zoo/official/recommend/deepfm/scripts/run_distribute_train_gpu.sh
+@@ -22,6 +22,11 @@ echo "After running the script, the network runs in the background, The log will
+ export RANK_SIZE=$1
+ DATA_URL=$2
+ 
++export BATCH_SIZE=$3
++if [ -n "$4" ]; then
++  export ENABLE_GRAPH_KERNEL=ON
++fi
++
+ rm -rf log
+ mkdir ./log
+ cp *.py ./log
+@@ -30,10 +35,11 @@ cp -r src ./log
+ cd ./log || exit
+ env > env.log
+ mpirun --allow-run-as-root -n $RANK_SIZE --output-filename log_output --merge-stderr-to-stdout \
+-  python -u train.py \
++  python3 -u train.py \
+     --dataset_path=$DATA_URL \
+     --ckpt_path="./" \
+     --eval_file_name='auc.log' \
+     --loss_file_name='loss.log' \
+     --device_target='GPU' \
+-    --do_eval=True > output.log 2>&1 &
++    --do_eval=True
++
+diff --git a/model_zoo/official/recommend/deepfm/scripts/run_standalone_train.sh b/model_zoo/official/recommend/deepfm/scripts/run_standalone_train.sh
+index 7780500b11..786749ba6c 100644
+--- a/model_zoo/official/recommend/deepfm/scripts/run_standalone_train.sh
++++ b/model_zoo/official/recommend/deepfm/scripts/run_standalone_train.sh
+@@ -32,15 +32,20 @@ fi
+ 
+ DATA_URL=$3
+ 
++export BATCH_SIZE=$4
++if [ -n "$5" ]; then
++  export ENABLE_GRAPH_KERNEL=ON
++fi
++
+ mkdir -p ms_log
+ CUR_DIR=`pwd`
+ export GLOG_log_dir=${CUR_DIR}/ms_log
+ export GLOG_logtostderr=0
+ 
+-python -u train.py \
++python3 -u train.py \
+     --dataset_path=$DATA_URL \
+     --ckpt_path="checkpoint" \
+     --eval_file_name='auc.log' \
+     --loss_file_name='loss.log' \
+     --device_target=$DEVICE_TARGET \
+-    --do_eval=True > ms_log/output.log 2>&1 &
++    --do_eval=True
+diff --git a/model_zoo/official/recommend/deepfm/src/model_utils/config.py b/model_zoo/official/recommend/deepfm/src/model_utils/config.py
+index 7f1ff6e2b8..79e7c400fe 100644
+--- a/model_zoo/official/recommend/deepfm/src/model_utils/config.py
++++ b/model_zoo/official/recommend/deepfm/src/model_utils/config.py
+@@ -122,6 +122,7 @@ def get_config():
+     pprint(default)
+     args = parse_cli_to_yaml(parser=parser, cfg=default, helper=helper, choices=choices, cfg_path=path_args.config_path)
+     final_config = merge(args, default)
++    final_config['batch_size'] = int(os.getenv("BATCH_SIZE"))
+     return Config(final_config)
+ 
+ config = get_config()
+diff --git a/model_zoo/official/recommend/deepfm/train.py b/model_zoo/official/recommend/deepfm/train.py
+index d2f1029a51..785a6b5d7b 100644
+--- a/model_zoo/official/recommend/deepfm/train.py
++++ b/model_zoo/official/recommend/deepfm/train.py
+@@ -42,6 +42,8 @@ def modelarts_pre_process():
+ @moxing_wrapper(pre_process=modelarts_pre_process)
+ def train_deepfm():
+     """ train_deepfm """
++    enable_gk = os.getenv("ENABLE_GRAPH_KERNEL") == "ON"
++    print("batchsize = {}, enable_graph_kernel = {}".format(config.batch_size, enable_gk))
+     if config.rank_size > 1:
+         if config.device_target == "Ascend":
+             device_id = int(os.getenv('DEVICE_ID'))
+@@ -54,7 +56,7 @@ def train_deepfm():
+             rank_id = int(os.environ.get('RANK_ID'))
+         elif config.device_target == "GPU":
+             init()
+-            context.set_context(mode=context.GRAPH_MODE, enable_graph_kernel=True, device_target=config.device_target)
++            context.set_context(mode=context.GRAPH_MODE, enable_graph_kernel=enable_gk, device_target=config.device_target)
+             context.set_context(graph_kernel_flags="--enable_cluster_ops=MatMul")
+             context.reset_auto_parallel_context()
+             context.set_auto_parallel_context(device_num=get_group_size(),
+@@ -69,7 +71,7 @@ def train_deepfm():
+             device_id = int(os.getenv('DEVICE_ID'))
+             context.set_context(mode=context.GRAPH_MODE, device_target=config.device_target, device_id=device_id)
+         elif config.device_target == "GPU":
+-            context.set_context(mode=context.GRAPH_MODE, enable_graph_kernel=True, device_target=config.device_target)
++            context.set_context(mode=context.GRAPH_MODE, enable_graph_kernel=enable_gk, device_target=config.device_target)
+             context.set_context(graph_kernel_flags="--enable_cluster_ops=MatMul")
+         else:
+             context.set_context(mode=context.GRAPH_MODE, device_target=config.device_target)
+diff --git a/model_zoo/official/recommend/wide_and_deep/script/run_multigpu_train.sh b/model_zoo/official/recommend/wide_and_deep/script/run_multigpu_train.sh
+index 9403ad685e..e861aa52a9 100644
+--- a/model_zoo/official/recommend/wide_and_deep/script/run_multigpu_train.sh
++++ b/model_zoo/official/recommend/wide_and_deep/script/run_multigpu_train.sh
+@@ -21,9 +21,14 @@ RANK_SIZE=$1
+ EPOCH_SIZE=$2
+ DATASET=$3
+ 
++export BATCH_SIZE=$4
++if [ -n "$5" ]; then
++  export ENABLE_GRAPH_KERNEL=ON
++fi
++
+ mpirun --allow-run-as-root -n $RANK_SIZE --output-filename log_output --merge-stderr-to-stdout \
+-    python -s ${self_path}/../train_and_eval_distribute.py  \
++    python3 train_and_eval_distribute.py  \
+         --device_target="GPU"                               \
+         --data_path=$DATASET                                \
+         --batch_size=16000                                  \
+-        --epochs=$EPOCH_SIZE > log.txt 2>&1 &
++        --epochs=$EPOCH_SIZE
+diff --git a/model_zoo/official/recommend/wide_and_deep/script/run_standalone_train_for_gpu.sh b/model_zoo/official/recommend/wide_and_deep/script/run_standalone_train_for_gpu.sh
+index 693c62b847..00a998c389 100644
+--- a/model_zoo/official/recommend/wide_and_deep/script/run_standalone_train_for_gpu.sh
++++ b/model_zoo/official/recommend/wide_and_deep/script/run_standalone_train_for_gpu.sh
+@@ -20,8 +20,13 @@ self_path=$(dirname "${script_self}")
+ EPOCH_SIZE=$1
+ DATASET=$2
+ 
+-python -s ${self_path}/../train_and_eval.py             \
++export BATCH_SIZE=$3
++if [ -n "$4" ]; then
++  export ENABLE_GRAPH_KERNEL=ON
++fi
++
++python3 train_and_eval.py             \
+     --device_target="GPU"                               \
+     --data_path=$DATASET                                \
+     --batch_size=16000                                  \
+-    --epochs=$EPOCH_SIZE > log.txt 2>&1 &
++    --epochs=$EPOCH_SIZE
+diff --git a/model_zoo/official/recommend/wide_and_deep/src/model_utils/config.py b/model_zoo/official/recommend/wide_and_deep/src/model_utils/config.py
+index 7cd312381a..8417fcccec 100644
+--- a/model_zoo/official/recommend/wide_and_deep/src/model_utils/config.py
++++ b/model_zoo/official/recommend/wide_and_deep/src/model_utils/config.py
+@@ -125,6 +125,7 @@ def get_config():
+     final_config = Config(final_config)
+     if final_config.host_device_mix == 1:
+         final_config.sparse = True
++    final_config.batch_size = int(os.getenv("BATCH_SIZE"))
+     return final_config
+ 
+ config = get_config()
+diff --git a/model_zoo/official/recommend/wide_and_deep/train_and_eval.py b/model_zoo/official/recommend/wide_and_deep/train_and_eval.py
+index 3439055e5d..7ef7f98434 100644
+--- a/model_zoo/official/recommend/wide_and_deep/train_and_eval.py
++++ b/model_zoo/official/recommend/wide_and_deep/train_and_eval.py
+@@ -98,6 +98,8 @@ def test_train_eval(config):
+ 
+     out = model.eval(ds_eval, dataset_sink_mode=(not sparse))
+     print("=====" * 5 + "model.eval() initialized: {}".format(out))
++    if os.getenv("WD_EVAL_ONLY"):
++        return
+     model.train(epochs, ds_train,
+                 callbacks=[TimeMonitor(ds_train.get_dataset_size()), eval_callback, callback, ckpoint_cb],
+                 dataset_sink_mode=(not sparse))
+@@ -108,7 +110,8 @@ def modelarts_pre_process():
+ 
+ @moxing_wrapper(pre_process=modelarts_pre_process)
+ def train_wide_and_deep():
+-    _enable_graph_kernel = cfg.device_target == "GPU"
++    _enable_graph_kernel = os.getenv("ENABLE_GRAPH_KERNEL") == "ON"
++    print("batchsize = {}, enable_graph_kernel = {}".format(cfg.batch_size, _enable_graph_kernel))
+     context.set_context(mode=context.GRAPH_MODE,
+                         enable_graph_kernel=_enable_graph_kernel, device_target=cfg.device_target)
+     if _enable_graph_kernel:
+diff --git a/model_zoo/official/recommend/wide_and_deep/train_and_eval_distribute.py b/model_zoo/official/recommend/wide_and_deep/train_and_eval_distribute.py
+index dbd5a3d7df..69bf6e2447 100644
+--- a/model_zoo/official/recommend/wide_and_deep/train_and_eval_distribute.py
++++ b/model_zoo/official/recommend/wide_and_deep/train_and_eval_distribute.py
+@@ -124,8 +124,8 @@ def modelarts_pre_process():
+ def train_wide_and_deep():
+     """ train_wide_and_deep """
+     context.set_context(mode=context.GRAPH_MODE, device_target=cfg.device_target, save_graphs=True)
+-
+-    _enable_graph_kernel = cfg.device_target == "GPU"
++    _enable_graph_kernel = os.getenv("ENABLE_GRAPH_KERNEL") == "ON"
++    print("batchsize = {}, enable_graph_kernel = {}".format(cfg.batch_size, _enable_graph_kernel))
+     if _enable_graph_kernel:
+         context.set_context(enable_graph_kernel=True)
+         context.set_context(graph_kernel_flags="--enable_cluster_ops=MatMul")

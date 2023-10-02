@@ -89,13 +89,50 @@ RUN cd /workspace && git clone https://github.com/abseil/abseil-cpp.git && mkdir
 
 # RUN cd to_python_binding_path && python setup.py clean && python setup.py install && pip install .
 
-RUN /workspace/anaconda3/bin/pip install tensorflow==2.10.0 yacs tensorflow-addons
+RUN /workspace/anaconda3/bin/pip install tensorflow==2.10.0 yacs tensorflow-addons 
+
+
+# Build mindspore according to https://gitee.com/mindspore/docs/blob/r1.3/install/mindspore_gpu_install_source.md
+RUN apt update -y && DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libnuma-dev
+
+RUN cd /workspace && git clone https://gitee.com/mindspore/mindspore.git -b r1.3 
+
+COPY souffle-mindspore-patch.txt /workspace/mindspore
+
+RUN apt update -y && DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libgmp-dev
+ENV PATH=/workspace/anaconda3/bin:$PATH
+RUN cd /workspace/mindspore && git apply souffle-mindspore-patch.txt 
+
+RUN apt update -y && DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends patch automake libtool flex
+ENV CC="/usr/bin/gcc"
+ENV CXX="/usr/bin/g++"
+RUN cd /workspace/mindspore && bash build.sh -e gpu
+RUN cd /workspace/mindspore && /workspace/anaconda3/bin/pip install output/mindspore_gpu-1.3.0-cp39-cp39-linux_x86_64.whl
+# mindspore requires CUDA 11.1
+# RUN apt update -y && DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends cuda-11-1
+# RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-11-1_11.1.1-1_amd64.deb && \
+#     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-runtime-11-1_11.1.1-1_amd64.deb && \
+#     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-toolkit-11-1_11.1.1-1_amd64.deb && \
+#     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-demo-suite-11-1_11.1.74-1_amd64.deb \
+#     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-libraries-11-1_11.1.1-1_amd64.deb
+
+# RUN dpkg -i cuda-runtime-11-1_11.1.1-1_amd64.deb && \
+#     dpkg -i cuda-toolkit-11-1_11.1.1-1_amd64.deb && \ 
+#     dpkg -i cuda-demo-suite-11-1_11.1.74-1_amd64.deb && \
+#     dpkg -i cuda-11-1_11.1.1-1_amd64.deb
+
+RUN wget https://developer.download.nvidia.com/compute/cuda/11.1.0/local_installers/cuda_11.1.0_455.23.05_linux.run
+RUN bash cuda_11.1.0_455.23.05_linux.run --silent --toolkit
+RUN rm /usr/local/cuda
+RUN ln -s /usr/local/cuda-11.7 /usr/local/cuda
 
 # Set and modify environment variables here
 ENV PYTHONPATH=/workspace/tvm/python:/workspace/third_party/EfficientNet-PyTorch:${PYTHONPATH}
 ENV PYTHONPATH=/workspace/tensor-compiler/src/operator_fusion:${PYTHONPATH}
 ENV LD_LIBRARY_PATH=/workspace/tvm/build:${LD_LIBRARY_PATH}
-ENV PATH=/workspace/anaconda3/bin:$PATH
 ENV TORCH_HOME="/workspace/anaconda3/lib/python3.9/site-packages/torch"
 ENV CUDA_HOME=/usr/local/cuda
-ENV LD_LIBRARY_PATH=${TORCH_HOME}/lib:${CUDA_HOME}/lib64:${CUDA_HOME}//targets/x86_64-linux/lib/stubs:${CUDA_HOME}//targets/x86_64-linux/lib:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=${TORCH_HOME}/lib:${CUDA_HOME}/lib64:${CUDA_HOME}/targets/x86_64-linux/lib/stubs:${CUDA_HOME}/targets/x86_64-linux/lib:$LD_LIBRARY_PATH
+ENV CUDA_HOME_11=/usr/local/cuda-11.1
+ENV LD_LIBRARY_PATH=${CUDA_HOME_11}/lib64:${CUDA_HOME_11}/targets/x86_64-linux/lib/stubs:${CUDA_HOME_11}/targets/x86_64-linux/lib:$LD_LIBRARY_PATH
+# RUN python -c "import mindspore;mindspore.run_check()"
